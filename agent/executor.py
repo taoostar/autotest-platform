@@ -9,6 +9,7 @@ import os
 import subprocess
 import tempfile
 import time
+import threading
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -45,6 +46,7 @@ class Executor:
     def __init__(self):
         self.process: Optional[subprocess.Popen] = None
         self.cancelled = False
+        self._lock = threading.Lock()  # 保护self.process的锁
 
     def execute(self, script_content: str, script_type: str,
                 timeout: int, env_vars: Dict[str, str], log_callback=None) -> ExecutionResult:
@@ -81,16 +83,19 @@ class Executor:
             env = os.environ.copy()
             env.update(env_vars)
 
-            # 执行
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-                text=True
-            )
+            # 使用锁保护self.process，确保cancel()能正确终止当前进程
+            with self._lock:
+                # 执行
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=env,
+                    text=True
+                )
+                process = self.process
 
-            # 实时读取输出
+            # 实时读取输出（不需要锁，因为process引用已保存）
             stdout_lines = []
             stderr_lines = []
 
@@ -98,11 +103,11 @@ class Executor:
                 # 读取stdout
                 import select
                 while True:
-                    reads = [self.process.stdout.fileno(), self.process.stderr.fileno()]
+                    reads = [process.stdout.fileno(), process.stderr.fileno()]
                     ret = select.select(reads, [], [], 0.1)
 
-                    if self.process.stdout.fileno() in ret[0]:
-                        line = self.process.stdout.readline()
+                    if process.stdout.fileno() in ret[0]:
+                        line = process.stdout.readline()
                         if line:
                             stdout_lines.append(line)
                             if log_callback:
@@ -110,25 +115,35 @@ class Executor:
                             if 'PASSED' in line or 'FAILED' in line or 'passed' in line or 'failed' in line:
                                 logger.info(line.strip())
 
-                    if self.process.stderr.fileno() in ret[0]:
-                        line = self.process.stderr.readline()
+                    if process.stderr.fileno() in ret[0]:
+                        line = process.stderr.readline()
                         if line:
                             stderr_lines.append(line)
                             if log_callback:
                                 log_callback(f"[ERROR] {line.strip()}")
 
-                    # 检查进程是否结束
-                    if self.process.poll() is not None:
+                    # 检查进程是否结束或被取消
+                    if process.poll() is not None:
+                        break
+                    if self.cancelled:
+                        self._terminate_process(process)
                         break
 
-                exit_code = self.process.returncode
+                # 等待进程完全结束并回收僵尸
+                process.wait()
+                exit_code = process.returncode
                 stdout = ''.join(stdout_lines)
                 stderr = ''.join(stderr_lines)
 
             except Exception as e:
                 # Windows或其他不支持select的平台，回退到普通方式
-                stdout, stderr = self.process.communicate()
-                exit_code = self.process.returncode
+                with self._lock:
+                    if self.process and process == self.process:
+                        stdout, stderr = self.process.communicate()
+                        exit_code = self.process.returncode
+                    else:
+                        stdout, stderr = '', str(e)
+                        exit_code = -1
                 if log_callback:
                     for line in stdout.split('\n'):
                         if line.strip():
@@ -162,6 +177,9 @@ class Executor:
                 os.unlink(script_path)
             except:
                 pass
+            # 清理self.process引用
+            with self._lock:
+                self.process = None
 
     def _build_command(self, script_type: str, script_path: str) -> list:
         """构建执行命令"""
@@ -231,15 +249,21 @@ class Executor:
                 return '\n'.join(lines[i:i+3])
         return text[:200]
 
+    def _terminate_process(self, process):
+        """安全终止进程"""
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
     def cancel(self):
         """取消执行"""
         self.cancelled = True
-        if self.process:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
+        with self._lock:
+            if self.process:
+                self._terminate_process(self.process)
 
 
 if __name__ == '__main__':

@@ -11,6 +11,8 @@ class TestPlan(db.Model):
     description = db.Column(db.Text)
     env_vars = db.Column(db.JSON, default=dict)  # 环境变量
     case_order = db.Column(db.JSON, default=list)  # 用例顺序
+    collect_performance = db.Column(db.Boolean, default=True)  # 是否采集性能
+    process_keyword = db.Column(db.String(100))  # 进程关键字
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -28,6 +30,8 @@ class TestPlan(db.Model):
             'description': self.description,
             'env_vars': self.env_vars or {},
             'case_order': self.case_order or [],
+            'collect_performance': self.collect_performance,
+            'process_keyword': self.process_keyword,
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
