@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Layout, Menu, Avatar, Dropdown, Button } from 'antd';
+import { Layout, Menu, Avatar, Dropdown, Button, Drawer } from 'antd';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   HomeOutlined,
@@ -12,6 +12,7 @@ import {
   SettingOutlined,
   UserOutlined,
   LogoutOutlined,
+  MenuOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -34,9 +35,11 @@ export default function MainLayout() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleMenuClick = ({ key }) => {
     navigate(key);
+    setMobileMenuOpen(false);
   };
 
   const userMenuItems = [
@@ -58,6 +61,25 @@ export default function MainLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
+      {/* 移动端侧边栏 - 使用 Drawer */}
+      <Drawer
+        title="AutoTest"
+        placement="left"
+        onClose={() => setMobileMenuOpen(false)}
+        open={mobileMenuOpen}
+        width={200}
+        styles={{ body: { padding: 0 } }}
+      >
+        <Menu
+          theme="dark"
+          mode="inline"
+          selectedKeys={[location.pathname]}
+          items={menuItems}
+          onClick={handleMenuClick}
+        />
+      </Drawer>
+
+      {/* 桌面端侧边栏 */}
       <Sider
         collapsible
         collapsed={collapsed}
@@ -69,6 +91,14 @@ export default function MainLayout() {
           top: 0,
           bottom: 0,
           overflow: 'auto',
+          zIndex: 10,
+        }}
+        breakpoint="lg"
+        collapsedWidth={80}
+        onBreakpoint={(broken) => {
+          if (broken) {
+            setCollapsed(true);
+          }
         }}
       >
         <div
@@ -92,17 +122,23 @@ export default function MainLayout() {
           onClick={handleMenuClick}
         />
       </Sider>
-      <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s' }}>
+      <Layout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s' }} className="main-layout-content">
         <Header
           style={{
             background: '#fff',
             padding: '0 24px',
             display: 'flex',
-            justifyContent: 'flex-end',
+            justifyContent: 'space-between',
             alignItems: 'center',
             boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
           }}
         >
+          <Button
+            icon={<MenuOutlined />}
+            onClick={() => setMobileMenuOpen(true)}
+            className="mobile-menu-btn"
+            style={{ display: 'none' }}
+          />
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Avatar icon={<UserOutlined />} style={{ cursor: 'pointer' }} />
           </Dropdown>

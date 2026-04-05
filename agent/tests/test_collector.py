@@ -32,7 +32,7 @@ class TestPerformanceCollector(unittest.TestCase):
         collector = PerformanceCollector()
         collected_data = []
 
-        def callback(task_id, data):
+        def callback(task_id, data, result_id=None):
             collected_data.append(data)
 
         collector.start(1, callback)
@@ -50,18 +50,16 @@ class TestPerformanceCollector(unittest.TestCase):
 
         # 验证数据结构
         for data in collected_data:
-            self.assertIn('cpu', data)
-            self.assertIn('memory', data)
-            self.assertIn('io_read_mb', data)
-            self.assertIn('io_write_mb', data)
-            self.assertIn('fd_count', data)
+            self.assertIn('system', data)
+            self.assertIn('cpu', data['system'])
+            self.assertIn('memory', data['system'])
 
     def test_collector_data_values(self):
         """测试采集数据值的合理性"""
         collector = PerformanceCollector()
         collected_data = []
 
-        def callback(task_id, data):
+        def callback(task_id, data, result_id=None):
             collected_data.append(data)
 
         collector.start(1, callback)
@@ -69,16 +67,11 @@ class TestPerformanceCollector(unittest.TestCase):
         collector.stop()
 
         for data in collected_data:
-            # CPU和内存应该在0-100之间
-            self.assertGreaterEqual(data['cpu'], 0)
-            self.assertLessEqual(data['cpu'], 100)
-            self.assertGreaterEqual(data['memory'], 0)
-            self.assertLessEqual(data['memory'], 100)
-
-            # IO和FD应该是非负数
-            self.assertGreaterEqual(data['io_read_mb'], 0)
-            self.assertGreaterEqual(data['io_write_mb'], 0)
-            self.assertGreaterEqual(data['fd_count'], 0)
+            # 系统CPU和内存在0-100之间
+            self.assertGreaterEqual(data['system']['cpu'], 0)
+            self.assertLessEqual(data['system']['cpu'], 100)
+            self.assertGreaterEqual(data['system']['memory'], 0)
+            self.assertLessEqual(data['system']['memory'], 100)
 
 
 if __name__ == '__main__':

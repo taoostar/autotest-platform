@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Table, Card, Button, Space, Tag, Modal, Form,
-  Input, Select, message, Popconfirm, Transfer
+  Input, Select, message, Popconfirm, Transfer, Radio, InputNumber
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined,
@@ -23,6 +23,9 @@ export default function Plans() {
   const [currentPlan, setCurrentPlan] = useState(null);
   const [availableCases, setAvailableCases] = useState([]);
   const [selectedCases, setSelectedCases] = useState([]);
+  const [taskModalVisible, setTaskModalVisible] = useState(false);
+  const [taskForm] = Form.useForm();
+  const [currentPlanForTask, setCurrentPlanForTask] = useState(null);
 
   useEffect(() => {
     loadProjects();
@@ -107,10 +110,34 @@ export default function Plans() {
     }
   };
 
-  const handleRunPlan = async (record) => {
+  const handleRunPlan = (record) => {
+    setCurrentPlanForTask(record);
+    taskForm.setFieldsValue({
+      plan_id: record.id,
+      concurrency: 1,
+      trigger_type: 'manual'
+    });
+    setTaskModalVisible(true);
+  };
+
+  const handleTaskSubmit = async () => {
     try {
-      const res = await tasksAPI.create({ plan_id: record.id });
+      const values = await taskForm.validateFields();
+      // 合并并发配置
+      const taskData = {
+        plan_id: values.plan_id,
+        trigger_type: values.trigger_type || 'manual',
+        env_vars_override: values.env_vars_override || {},
+      };
+      // 如果选择了并行模式，使用自定义并发数
+      if (values.concurrency > 1) {
+        taskData.concurrency = values.customConcurrency || values.concurrency;
+      } else {
+        taskData.concurrency = 1;
+      }
+      const res = await tasksAPI.create(taskData);
       message.success('任务已创建');
+      setTaskModalVisible(false);
       navigate(`/tasks/${res.data.id}`);
     } catch (error) {
       message.error('创建任务失败');
@@ -218,6 +245,30 @@ export default function Plans() {
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={2} />
           </Form.Item>
+          <Form.Item
+            name="collect_performance"
+            label="性能采集"
+            valuePropName="checked"
+            extra="开启后，串行执行时将采集系统和进程性能数据"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, curr) => prev.collect_performance !== curr.collect_performance}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('collect_performance') && (
+                <Form.Item
+                  name="process_keyword"
+                  label="进程关键字"
+                  extra="填写进程关键字（如 python, java, pytest），系统会监控匹配进程的性能"
+                >
+                  <Input placeholder="如: python, java, pytest" />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -236,6 +287,60 @@ export default function Plans() {
           titles={['可用用例', '已选用例']}
           listStyle={{ width: 250, height: 300 }}
         />
+      </Modal>
+
+      <Modal
+        title="创建任务"
+        open={taskModalVisible}
+        onOk={handleTaskSubmit}
+        onCancel={() => setTaskModalVisible(false)}
+        width={500}
+      >
+        <Form form={taskForm} layout="vertical">
+          <Form.Item name="plan_id" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="trigger_type" label="触发方式">
+            <Radio.Group>
+              <Radio.Button value="manual">手动</Radio.Button>
+              <Radio.Button value="schedule">定时</Radio.Button>
+              <Radio.Button value="webhook">Webhook</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item label="执行模式" required>
+            <Form.Item noStyle name="concurrency">
+              <Radio.Group>
+                <Radio.Button value={1}>串行执行</Radio.Button>
+                <Radio.Button value={2}>并行执行</Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+            <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
+              串行执行时支持性能数据采集，并行执行效率更高但不支持性能数据
+            </div>
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, curr) => prev.concurrency !== curr.concurrency}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('concurrency') > 1 && (
+                <Form.Item
+                  name="customConcurrency"
+                  label="并发数"
+                  initialValue={2}
+                >
+                  <InputNumber min={2} max={10} />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
+          <Form.Item name="env_vars_override" label="环境变量覆盖">
+            <Input.TextArea
+              placeholder='JSON格式，如 {"DEBUG": "true"}'
+              rows={2}
+            />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

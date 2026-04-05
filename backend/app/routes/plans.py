@@ -78,6 +78,10 @@ def update_plan(plan_id):
         plan.description = data['description']
     if 'env_vars' in data:
         plan.env_vars = data['env_vars']
+    if 'collect_performance' in data:
+        plan.collect_performance = data['collect_performance']
+    if 'process_keyword' in data:
+        plan.process_keyword = data['process_keyword']
 
     db.session.commit()
 

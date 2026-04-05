@@ -32,3 +32,17 @@ code {
   border-radius: 4px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
 }
+/* 响应式布局 - 移动端 */
+@media (max-width: 768px) {
+  .ant-layout-sider.ant-layout-sider-collapsed {
+    margin-left: -200px;
+  }
+
+  .main-layout-content {
+    margin-left: 0 !important;
+  }
+
+  .mobile-menu-btn {
+    display: inline-block !important;
+  }
+}

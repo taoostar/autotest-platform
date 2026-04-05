@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required
 from datetime import datetime, timedelta
 from sqlalchemy import func
 from app import db
-from app.models.task import TestTask, TaskResult
+from app.models.task import TestTask, TaskResult, PerformanceLog
 
 reports_bp = Blueprint('reports', __name__)
 
@@ -115,6 +115,19 @@ def get_task_report(task_id):
     task = TestTask.query.get_or_404(task_id)
     results = TaskResult.query.filter_by(task_id=task_id).all()
 
+    # 获取性能数据
+    performance_logs = PerformanceLog.query.filter_by(task_id=task_id).order_by(PerformanceLog.timestamp).all()
+
+    # 按result_id分组性能数据
+    perf_by_result = {}
+    perf_total = []
+    for log in performance_logs:
+        perf_total.append(log.to_dict())
+        if log.result_id:
+            if log.result_id not in perf_by_result:
+                perf_by_result[log.result_id] = []
+            perf_by_result[log.result_id].append(log.to_dict())
+
     summary = {
         'total': len(results),
         'passed': sum(1 for r in results if r.status == 'passed'),
@@ -126,7 +139,11 @@ def get_task_report(task_id):
     return jsonify({
         'task': task.to_dict(),
         'summary': summary,
-        'results': [r.to_dict() for r in results]
+        'results': [r.to_dict() for r in results],
+        'performance': {
+            'total': perf_total,
+            'by_result': perf_by_result
+        }
     })
 
 

@@ -20,11 +20,17 @@ def create_app(config_name='config.Config'):
     db.init_app(app)
     jwt.init_app(app)
     CORS(app, supports_credentials=True)
-    socketio.init_app(app, cors_allowed_origins="*", message_queue=app.config['SOCKETIO_MESSAGE_QUEUE'])
 
-    # 初始化Redis
+    # 初始化Redis（可选，无Redis时跳过）
     global redis_client
-    redis_client = redis.from_url(app.config['REDIS_URL'])
+    try:
+        redis_client = redis.from_url(app.config['REDIS_URL'])
+    except Exception as e:
+        print(f"Redis连接失败，跳过: {e}")
+        redis_client = None
+
+    # SocketIO message_queue需要Redis，如果没有Redis则不用
+    socketio.init_app(app, cors_allowed_origins="*", message_queue=app.config.get('SOCKETIO_MESSAGE_QUEUE') if redis_client else None)
 
     # 注册蓝图
     from app.routes.auth import auth_bp

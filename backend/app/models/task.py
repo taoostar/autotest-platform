@@ -63,6 +63,7 @@ class TaskResult(db.Model):
     screenshots = db.Column(db.JSON, default=list)
     log_path = db.Column(db.String(500))
     performance = db.Column(db.JSON)
+    perf_summary = db.Column(db.JSON)  # 性能汇总
 
     task = db.relationship('TestTask', back_populates='results')
     case = db.relationship('TestCase', back_populates='results')
@@ -82,7 +83,8 @@ class TaskResult(db.Model):
             'stack_trace': self.stack_trace,
             'screenshots': self.screenshots or [],
             'log_path': self.log_path,
-            'performance': self.performance
+            'performance': self.performance,
+            'perf_summary': self.perf_summary
         }
 
 
@@ -91,24 +93,35 @@ class PerformanceLog(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('test_tasks.id'), nullable=False)
+    result_id = db.Column(db.Integer, db.ForeignKey('task_results.id'))  # 关联用例结果
     agent_id = db.Column(db.Integer, db.ForeignKey('agents.id'))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     cpu_percent = db.Column(db.Float)
     memory_percent = db.Column(db.Float)
+    load_avg_1 = db.Column(db.Float)  # 1分钟负载
+    load_avg_5 = db.Column(db.Float)  # 5分钟负载
+    load_avg_15 = db.Column(db.Float)  # 15分钟负载
     io_wait = db.Column(db.Float)
-    fd_count = db.Column(db.Integer)
+    fd_count = db.Column(db.Integer)  # 系统级 FD 总数
+    process_data = db.Column(db.JSON)  # 进程性能数据
 
     task = db.relationship('TestTask', back_populates='performance_logs')
+    result = db.relationship('TaskResult', foreign_keys=[result_id])
     agent = db.relationship('Agent')
 
     def to_dict(self):
         return {
             'id': self.id,
             'task_id': self.task_id,
+            'result_id': self.result_id,
             'agent_id': self.agent_id,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'cpu_percent': self.cpu_percent,
             'memory_percent': self.memory_percent,
+            'load_avg_1': self.load_avg_1,
+            'load_avg_5': self.load_avg_5,
+            'load_avg_15': self.load_avg_15,
             'io_wait': self.io_wait,
-            'fd_count': self.fd_count
+            'fd_count': self.fd_count,
+            'process_data': self.process_data
         }

@@ -102,8 +102,8 @@ export default function Dashboard() {
     <div>
       <h2 style={{ marginBottom: 24 }}>仪表盘</h2>
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="今日成功"
@@ -113,7 +113,7 @@ export default function Dashboard() {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="今日失败"
@@ -123,7 +123,7 @@ export default function Dashboard() {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="运行中"
@@ -133,7 +133,7 @@ export default function Dashboard() {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
               title="Agent在线"
@@ -144,13 +144,13 @@ export default function Dashboard() {
         </Col>
       </Row>
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={16}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} lg={16}>
           <Card title="通过率趋势">
             <ReactECharts option={getTrendOption()} style={{ height: 300 }} />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} lg={8}>
           <Card
             title="最近任务"
             extra={<a onClick={() => navigate('/tasks')}>查看更多</a>}

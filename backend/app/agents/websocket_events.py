@@ -135,19 +135,47 @@ def handle_task_complete(data):
             result.error_type = data.get('error_type')
             result.error_message = data.get('error_message')
             result.stack_trace = data.get('stack_trace')
+            result.perf_summary = data.get('perf_summary')  # 性能汇总
             result.finished_at = datetime.utcnow()
 
-        # 先提交结果更新
         db.session.commit()
 
-        # 再检查任务是否完成
+        # 检查是否有下一个任务需要发送（串行模式）
+        queue_data = redis_client.get(f'task_queue:{task_id}')
+        if queue_data:
+            queue_info = json.loads(queue_data)
+            remaining = queue_info.get('cases', [])
+
+            if remaining:
+                # 取出下一个任务发送
+                next_case = remaining.pop(0)
+                next_case['agent_id'] = agent_id
+
+                # 存储更新后的队列
+                redis_client.setex(
+                    f'task_queue:{task_id}',
+                    3600,
+                    json.dumps({
+                        'cases': remaining,
+                        'sent': queue_info.get('sent', 1) + 1,
+                        'total': queue_info.get('total', 0)
+                    })
+                )
+
+                # 发送下一个任务给 Agent
+                socketio.emit('task_assign', next_case, namespace='/ws/agent')
+                print(f'Task {task_id}: sent next case, {len(remaining)} remaining')
+                return
+
+        # 没有更多任务，检查任务是否全部完成
         task = db.session.get(TestTask, task_id)
         if task:
             db.session.refresh(task)
             pending_results = TaskResult.query.filter_by(task_id=task_id).filter(
                 TaskResult.status.in_(['pending', 'running'])
             ).count()
-            if pending_results == 0 and task.status != 'success' and task.status != 'failed':
+
+            if pending_results == 0 and task.status not in ['success', 'failed', 'cancelled']:
                 # 所有用例完成，汇总结果
                 all_results = TaskResult.query.filter_by(task_id=task_id).all()
                 failed_count = sum(1 for r in all_results if r.status == 'failed')
@@ -161,6 +189,9 @@ def handle_task_complete(data):
                 if task.started_at:
                     task.duration = (task.finished_at - task.started_at).total_seconds()
                 db.session.commit()
+
+                # 清理 Redis 队列数据
+                redis_client.delete(f'task_queue:{task_id}')
 
     except Exception as e:
         print(f'ERROR in task_complete: {e}')
@@ -232,18 +263,29 @@ def handle_performance(data):
 
     agent_id = online_agents[request.sid]
     task_id = data.get('task_id')
+    result_id = data.get('result_id')
+
+    system_data = data.get('system', {})
+    process_data = data.get('process')
 
     from app import db
     perf_log = PerformanceLog(
         task_id=task_id,
+        result_id=result_id,
         agent_id=agent_id,
-        cpu_percent=data.get('cpu'),
-        memory_percent=data.get('memory'),
-        io_wait=data.get('io_wait'),
-        fd_count=data.get('fd_count')
+        cpu_percent=system_data.get('cpu'),
+        memory_percent=system_data.get('memory'),
+        load_avg_1=system_data.get('load_avg', [0, 0, 0])[0] if system_data.get('load_avg') else None,
+        load_avg_5=system_data.get('load_avg', [0, 0, 0])[1] if system_data.get('load_avg') else None,
+        load_avg_15=system_data.get('load_avg', [0, 0, 0])[2] if system_data.get('load_avg') else None,
+        process_data=process_data,
+        fd_count=system_data.get('fd_count')
     )
     db.session.add(perf_log)
     db.session.commit()
+
+    # 广播给前端
+    emit('performance', perf_log.to_dict(), namespace='/ws/client', broadcast=True)
 
 
 # 前端WebSocket连接（用于实时日志）

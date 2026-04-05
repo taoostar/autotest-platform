@@ -319,29 +319,105 @@ def dispatch_task(task_id):
     # 按优先级排序
     case_scripts.sort(key=lambda x: x['priority'])
 
-    # 通过WebSocket发送任务给Agent（每个用例一条消息）
+    # 获取任务的并发配置
+    task_concurrency = task.concurrency or 1
+
+    # 通过WebSocket发送任务给Agent
     dispatched_cases = []
-    for case_info in case_scripts:
-        dispatch_data = {
-            'type': 'task_assign',
-            'task_id': task_id,
-            'result_id': case_info['result_id'],  # 使用实际的TaskResult ID
-            'agent_id': agent_id,
-            'case_id': case_info['case_id'],
-            'case_name': case_info['case_name'],
-            'script_content': case_info['script_content'],
-            'script_type': case_info['script_type'],
-            'env_vars': env_vars,
-            'timeout': case_info['timeout'],
-            'priority': case_info['priority']
-        }
 
-        # 存储任务信息到Redis，用于追踪
-        redis_client.setex(f'task_dispatch:{task_id}:{case_info["case_id"]}', 3600, json.dumps(dispatch_data))
+    # 发送第一批任务（根据并发数）
+    if task_concurrency == 1:
+        # 串行模式：只发送第一个任务
+        if case_scripts:
+            first_case = case_scripts[0]
+            dispatch_data = {
+                'type': 'task_assign',
+                'task_id': task_id,
+                'result_id': first_case['result_id'],
+                'agent_id': agent_id,
+                'case_id': first_case['case_id'],
+                'case_name': first_case['case_name'],
+                'script_content': first_case['script_content'],
+                'script_type': first_case['script_type'],
+                'env_vars': env_vars,
+                'timeout': first_case['timeout'],
+                'priority': first_case['priority'],
+                'concurrency': 1,  # 标记串行模式
+                'process_keyword': plan.process_keyword if plan.collect_performance else None
+            }
+            import sys
+            print(f"DEBUG: plan.collect_performance={plan.collect_performance}, plan.process_keyword={plan.process_keyword}", flush=True)
+            print(f"DEBUG dispatch_data: {dispatch_data}", flush=True)
 
-        # 发送WebSocket消息
-        socketio.emit('task_assign', dispatch_data, namespace='/ws/agent')
-        dispatched_cases.append(case_info['case_id'])
+            redis_client.setex(f'task_dispatch:{task_id}:{first_case["case_id"]}', 3600, json.dumps(dispatch_data))
+            socketio.emit('task_assign', dispatch_data, namespace='/ws/agent')
+            dispatched_cases.append(first_case['case_id'])
+
+            # 存储剩余任务信息到 Redis
+            remaining = case_scripts[1:]
+            if remaining:
+                remaining_data = []
+                for case in remaining:
+                    remaining_data.append({
+                        'case_id': case['case_id'],
+                        'result_id': case['result_id'],
+                        'case_name': case['case_name'],
+                        'script_content': case['script_content'],
+                        'script_type': case['script_type'],
+                        'timeout': case['timeout'],
+                        'priority': case['priority'],
+                        'concurrency': 1,
+                        'process_keyword': plan.process_keyword if plan.collect_performance else None
+                    })
+                redis_client.setex(f'task_queue:{task_id}', 3600, json.dumps({
+                    'cases': remaining_data,
+                    'sent': 1,
+                    'total': len(case_scripts)
+                }))
+    else:
+        # 并行模式：按 concurrency 发送
+        for i, case_info in enumerate(case_scripts[:task_concurrency]):
+            dispatch_data = {
+                'type': 'task_assign',
+                'task_id': task_id,
+                'result_id': case_info['result_id'],
+                'agent_id': agent_id,
+                'case_id': case_info['case_id'],
+                'case_name': case_info['case_name'],
+                'script_content': case_info['script_content'],
+                'script_type': case_info['script_type'],
+                'env_vars': env_vars,
+                'timeout': case_info['timeout'],
+                'priority': case_info['priority'],
+                'concurrency': task_concurrency,  # 标记并行模式
+                'process_keyword': None  # 并行模式不采集性能数据
+            }
+
+            redis_client.setex(f'task_dispatch:{task_id}:{case_info["case_id"]}', 3600, json.dumps(dispatch_data))
+            socketio.emit('task_assign', dispatch_data, namespace='/ws/agent')
+            dispatched_cases.append(case_info['case_id'])
+
+        # 存储剩余任务信息到 Redis
+        remaining = case_scripts[task_concurrency:]
+        if remaining:
+            remaining_data = []
+            for case in remaining:
+                remaining_data.append({
+                    'case_id': case['case_id'],
+                    'result_id': case['result_id'],
+                    'case_name': case['case_name'],
+                    'script_content': case['script_content'],
+                    'script_type': case['script_type'],
+                    'timeout': case['timeout'],
+                    'priority': case['priority'],
+                    'concurrency': task_concurrency,
+                    'process_keyword': None
+                })
+            redis_client.setex(f'task_queue:{task_id}', 3600, json.dumps({
+                'cases': remaining_data,
+                'sent': len(dispatched_cases),
+                'total': len(case_scripts)
+            }))
 
     # 更新任务状态
     task.status = 'running'
@@ -352,5 +428,6 @@ def dispatch_task(task_id):
         'message': '任务已分发',
         'task': task.to_dict(),
         'agent_id': agent_id,
-        'dispatched_cases': dispatched_cases
+        'dispatched_cases': dispatched_cases,
+        'concurrency': task_concurrency
     })
