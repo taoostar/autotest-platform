@@ -1,0 +1,30 @@
+# AutoTest Platform - Agent Configuration
+# 测试代理配置
+
+agent_id: "1"
+platform_url: "http://localhost:5000"
+
+# 心跳间隔（秒）
+heartbeat_interval: 30
+
+# 性能数据采集间隔（秒）
+performance_interval: 5
+
+# 标签（用于任务分发筛选）
+labels:
+  - "linux"
+  - "local"
+
+# 执行配置
+execution:
+  # 默认超时时间（秒）
+  default_timeout: 300
+  # 最大并发任务数
+  max_concurrent_tasks: 1
+  # 工作目录
+  work_dir: "./workspace"
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "./logs/agent.log"
